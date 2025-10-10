@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# Temporarily disabled features
+/src/app/api/scheme/[code]/nav-analysis/route.js
+
+
+# Keep only these active features:
+# - Rolling Returns
+# - Alpha Beta
+# - Lumpsum Calculator
+# - SWP Calculator
+# - Step-up SIP Calculator
+# - Step-up SWP Calculator

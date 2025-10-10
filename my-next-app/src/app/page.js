@@ -21,6 +21,7 @@ import {
 import { Search as SearchIcon, TrendingUp as TrendingUpIcon } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+// import MutualFundDashboard from './components/MutualFundDashboard';
 
 export default function Home() {
   const [funds, setFunds] = useState([]);
@@ -30,6 +31,8 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [categories, setCategories] = useState([]);
+  // const [showDashboard, setShowDashboard] = useState(false);
+  // const [selectedFund, setSelectedFund] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -40,17 +43,21 @@ export default function Home() {
     filterFunds();
   }, [searchTerm, selectedCategory, funds]);
 
+  // In your fetchFunds function
   const fetchFunds = async () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/mf');
       setFunds(response.data);
-      
+
       // Extract unique categories
       const uniqueCategories = [...new Set(response.data.map(fund => fund.category))].filter(Boolean);
-      setCategories(uniqueCategories);
-      
-      setFilteredFunds(response.data.slice(0, 50)); // Show first 50 initially
+    
+    setCategories(uniqueCategories);
+
+      // REMOVE THIS LINE:
+      // setFilteredFunds(response.data.slice(0, 50)); 
+
     } catch (err) {
       setError('Failed to fetch mutual funds data');
       console.error('Error fetching funds:', err);
@@ -59,26 +66,57 @@ export default function Home() {
     }
   };
 
+  // const filterFunds = () => {
+  //   let filtered = funds;
+
+  //   if (searchTerm) {
+  //     filtered = filtered.filter(fund =>
+  //       fund.schemeName?.toLowerCase().includes(searchTerm.toLowerCase()) || // Good to add here too
+  //       fund.fundHouse?.toLowerCase().includes(searchTerm.toLowerCase()) // This is safe now
+  //     );
+  //   }
+
+  //   if (selectedCategory) {
+  //     filtered = filtered.filter(fund => fund.category === selectedCategory);
+  //   }
+
+  //   setFilteredFunds(filtered.slice(0, 10)); // Limit to 100 results
+  // };
+
+
+  // In your filterFunds function
   const filterFunds = () => {
     let filtered = funds;
 
     if (searchTerm) {
       filtered = filtered.filter(fund =>
-        fund.schemeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        fund.fundHouse.toLowerCase().includes(searchTerm.toLowerCase())
+        fund.schemeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        fund.fundHouse?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (selectedCategory) {
-      filtered = filtered.filter(fund => fund.category === selectedCategory);
+      filtered = filtered.filter(fund => fund.schemeName.split(' - ')[1] === selectedCategory);
     }
 
-    setFilteredFunds(filtered.slice(0, 100)); // Limit to 100 results
+    // CHANGE THIS LINE to show all results
+    setFilteredFunds(filtered.slice(0, 10));
   };
+
 
   const handleViewDetails = (schemeCode) => {
     router.push(`/scheme/${schemeCode}`);
   };
+
+  // const handleShowDashboard = (fund) => {
+  //   setSelectedFund(fund);
+  //   setShowDashboard(true);
+  // };
+
+  // const handleBackToFunds = () => {
+  //   setShowDashboard(false);
+  //   setSelectedFund(null);
+  // };
 
   if (loading) {
     return (
@@ -95,6 +133,26 @@ export default function Home() {
       </Alert>
     );
   }
+
+  // if (showDashboard && selectedFund) {
+  //   return (
+  //     <Box>
+  //       <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+  //         <Button 
+  //           startIcon={<DashboardIcon />} 
+  //           onClick={handleBackToFunds}
+  //           variant="outlined"
+  //         >
+  //           Back to Funds
+  //         </Button>
+  //         <Typography variant="h5">
+  //           {selectedFund.schemeName} - Dashboard
+  //         </Typography>
+  //       </Box>
+  //       <MutualFundDashboard schemeCode={selectedFund.schemeCode} />
+  //     </Box>
+  //   );
+  // }
 
   return (
     <Box>
@@ -149,11 +207,11 @@ export default function Home() {
       <Grid container spacing={3}>
         {filteredFunds.map((fund) => (
           <Grid item xs={12} sm={6} md={4} lg={3} key={fund.schemeCode}>
-            <Card 
-              elevation={2} 
-              sx={{ 
-                height: '100%', 
-                display: 'flex', 
+            <Card
+              elevation={2}
+              sx={{
+                height: '100%',
+                display: 'flex',
                 flexDirection: 'column',
                 transition: 'transform 0.2s, box-shadow 0.2s',
                 '&:hover': {
@@ -163,9 +221,9 @@ export default function Home() {
               }}
             >
               <CardContent sx={{ flexGrow: 1 }}>
-                <Typography 
-                  variant="h6" 
-                  component="h2" 
+                <Typography
+                  variant="h6"
+                  component="h2"
                   gutterBottom
                   sx={{
                     fontSize: '1rem',
@@ -179,36 +237,45 @@ export default function Home() {
                 >
                   {fund.schemeName}
                 </Typography>
-                
+
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   {fund.fundHouse}
                 </Typography>
-                
+
                 {fund.category && (
-                  <Chip 
-                    label={fund.category} 
-                    size="small" 
-                    color="primary" 
+                  <Chip
+                    label={fund.category}
+                    size="small"
+                    color="primary"
                     variant="outlined"
                     sx={{ mb: 1 }}
                   />
                 )}
-                
+
                 <Typography variant="caption" display="block" color="text.secondary">
                   Code: {fund.schemeCode}
                 </Typography>
               </CardContent>
-              
-              <CardActions>
+
+              <CardActions sx={{ gap: 1 }}>
                 <Button
                   size="small"
                   variant="contained"
                   startIcon={<TrendingUpIcon />}
                   onClick={() => handleViewDetails(fund.schemeCode)}
-                  fullWidth
+                  sx={{ flex: 1 }}
                 >
-                  Analyze Fund
+                  Full Analysis
                 </Button>
+                {/* <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<DashboardIcon />}
+                  onClick={() => handleShowDashboard(fund)}
+                  sx={{ flex: 1 }}
+                >
+                  Dashboard
+                </Button> */}
               </CardActions>
             </Card>
           </Grid>

@@ -71,8 +71,8 @@ export default function FundsPage() {
 
     if (searchTerm) {
       filtered = filtered.filter(fund =>
-        fund.schemeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        fund.fundHouse.toLowerCase().includes(searchTerm.toLowerCase())
+        fund.schemeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        fund.fundHouse?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 

@@ -1,93 +1,93 @@
-import axios from "axios";
-import dayjs from "dayjs";
+// src/app/api/scheme/[code]/sip/route.js
 
-let sipCache = {}; // optional caching per code+body
+import { NextResponse } from 'next/server';
+import axios from 'axios';
+import dayjs from 'dayjs';
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 
-export async function POST(req, { params }) {
-  const { code } = params;
+dayjs.extend(isSameOrAfter);
+
+export async function POST(request, { params }) {
+  const { code } = await params;
+  const body = await request.json();
+
+  const { amount, startDate, endDate, frequency } = body;
+
+  if (!amount || !startDate || !endDate || !frequency) {
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
 
   try {
-    const body = await req.json();
-    const { amount, frequency = "monthly", from, to } = body;
+    const response = await axios.get(`https://api.mfapi.in/mf/${code}`);
+    let navData = response.data.data;
 
-    if (!amount || !from || !to) {
-      throw new Error("amount, from, and to are required in body");
+    if (navData && Array.isArray(navData)) {
+      navData = navData.filter(item => {
+        const isValidDate = dayjs(item.date, 'DD-MM-YYYY', true).isValid();
+        const navValue = parseFloat(item.nav);
+        const isValidNav = !isNaN(navValue) && navValue > 0;
+        return isValidDate && isValidNav;
+      });
     }
 
-    const cacheKey = `${code}-${amount}-${frequency}-${from}-${to}`;
-    const TTL = 12 * 60 * 60 * 1000; // 12 hours
-    const now = Date.now();
+    if (!navData || navData.length < 2) {
+      return NextResponse.json({ error: 'No valid NAV data available for this scheme' }, { status: 404 });
+    }
 
-    if (!sipCache[cacheKey] || now - sipCache[cacheKey].lastFetched > TTL) {
-      // Fetch NAV data
-      const response = await axios.get(`https://api.mfapi.in/mf/${code}`);
-      const navHistory = response.data.data.slice().reverse(); // chronological order
+    const sortedNavData = [...navData].sort((a, b) =>
+      dayjs(a.date, 'DD-MM-YYYY').valueOf() - dayjs(b.date, 'DD-MM-YYYY').valueOf()
+    );
 
-      let sipDate = dayjs(from);
-      const endDate = dayjs(to);
-      let totalInvested = 0,
-        totalUnits = 0;
-      const investmentHistory = [];
+    let totalUnits = 0;
+    let totalInvestment = 0;
+    let installments = 0;
+    let currentDate = dayjs(startDate);
+    const finalDate = dayjs(endDate);
+    let navIndex = 0;
 
-      // Determine frequency increment
-      const freqMap = { monthly: 1, quarterly: 3, yearly: 12 };
-      const monthIncrement = freqMap[frequency.toLowerCase()] || 1;
+    const firstNavDate = dayjs(sortedNavData[0].date, 'DD-MM-YYYY');
+    if (currentDate.isBefore(firstNavDate)) {
+      currentDate = firstNavDate;
+    }
 
-      while (sipDate.isBefore(endDate) || sipDate.isSame(endDate)) {
-        const nav = findNAV(navHistory, sipDate.format("YYYY-MM-DD"));
-        if (nav && nav > 0) {
-          const units = amount / nav;
-          totalUnits += units;
-          totalInvested += amount;
-          
-          // Track investment history for charting
-          investmentHistory.push({
-            date: sipDate.format("YYYY-MM-DD"),
-            invested: totalInvested,
-            value: totalUnits * nav,
-            nav: nav,
-            units: units
-          });
-        }
-        sipDate = sipDate.add(monthIncrement, "month");
+    // Corrected the loop condition to stop BEFORE the final date
+    while (currentDate.isSameOrAfter(firstNavDate) && currentDate.isBefore(finalDate)) {
+      while (
+        navIndex < sortedNavData.length - 1 &&
+        dayjs(sortedNavData[navIndex].date, 'DD-MM-YYYY').isBefore(currentDate)
+      ) {
+        navIndex++;
       }
 
-      const latestNAV = parseFloat(navHistory[navHistory.length - 1].nav);
-      const currentValue = totalUnits * latestNAV;
+      const navForInvestment = sortedNavData[navIndex];
 
-      const absoluteReturn = totalInvested > 0 ? ((currentValue - totalInvested) / totalInvested) * 100 : 0;
-      const years = endDate.diff(dayjs(from), "day") / 365;
-      const annualizedReturn =
-        years > 0 && totalInvested > 0 ? (Math.pow(currentValue / totalInvested, 1 / years) - 1) * 100 : null;
+      if (navForInvestment) {
+        const navValue = parseFloat(navForInvestment.nav);
+        const unitsPurchased = amount / navValue;
+        totalUnits += unitsPurchased;
+        totalInvestment += amount;
+        installments++;
+      }
 
-      sipCache[cacheKey] = {
-        data: { 
-          totalInvested, 
-          currentValue, 
-          totalUnits, 
-          absoluteReturn, 
-          annualizedReturn,
-          investmentHistory 
-        },
-        lastFetched: now,
-      };
+      if (frequency === 'monthly') {
+        currentDate = currentDate.add(1, 'month');
+      }
     }
 
-    return new Response(JSON.stringify(sipCache[cacheKey].data), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error(`SIP calculation error for ${code}:`, error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-}
+    const latestNav = parseFloat(sortedNavData[sortedNavData.length - 1].nav);
+    const finalValue = totalUnits * latestNav;
 
-// Helper function to find closest NAV on or before the date
-function findNAV(data, date) {
-  const entry = data.find((d) => dayjs(d.date).isSameOrBefore(dayjs(date)));
-  return entry ? parseFloat(entry.nav) : null;
+    return NextResponse.json({
+      totalInvestment: Math.round(totalInvestment),
+      finalValue: Math.round(finalValue),
+      installments,
+      amountPerInstallment: amount,
+      startDate,
+      endDate,
+    });
+
+  } catch (err) {
+    console.error('SIP API Error:', err);
+    return NextResponse.json({ error: 'Failed to calculate SIP', details: err.message }, { status: 500 });
+  }
 }

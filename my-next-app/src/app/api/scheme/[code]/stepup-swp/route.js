@@ -12,10 +12,17 @@ export async function POST(req, { params }) {
   
   try {
     const body = await req.json();
-    const { amount, startDate, endDate, frequency } = body;
+    const { 
+      amount, 
+      startDate, 
+      endDate, 
+      frequency, 
+      stepUpAmount, 
+      stepUpFrequency 
+    } = body;
     
     // Validate input
-    if (!amount || !startDate || !endDate || !frequency) {
+    if (!amount || !startDate || !endDate || !frequency || !stepUpAmount || !stepUpFrequency) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -85,6 +92,24 @@ export async function POST(req, { params }) {
     let currentDate = start;
     let totalWithdrawn = 0;
     let withdrawals = 0;
+    let currentWithdrawalAmount = parseFloat(amount);
+    let nextStepUpDate = dayjs(start);
+
+    // Calculate next step-up date based on frequency
+    const getNextStepUpDate = (date) => {
+      switch (stepUpFrequency) {
+        case 'yearly':
+          return date.add(1, 'year');
+        case 'half-yearly':
+          return date.add(6, 'month');
+        case 'quarterly':
+          return date.add(3, 'month');
+        default:
+          return date.add(1, 'year');
+      }
+    };
+
+    nextStepUpDate = getNextStepUpDate(nextStepUpDate);
 
     // Calculate withdrawal frequency in months
     let withdrawalInterval;
@@ -105,21 +130,14 @@ export async function POST(req, { params }) {
         );
     }
 
-    // Calculate total number of withdrawals
-    const totalMonths = end.diff(start, 'month');
-    const totalWithdrawals = Math.floor(totalMonths / withdrawalInterval);
-    
-    if (totalWithdrawals === 0) {
-      return NextResponse.json(
-        { error: 'Investment period too short for the selected frequency' },
-        { status: 400 }
-      );
-    }
-
-    const monthlyWithdrawalAmount = amount / totalWithdrawals;
-
-    // Simulate withdrawals
+    // Simulate withdrawals with step-up
     while (currentDate.isBefore(end) && currentUnits > 0) {
+      // Check if it's time for step-up
+      if (currentDate.isSameOrAfter(nextStepUpDate)) {
+        currentWithdrawalAmount += parseFloat(stepUpAmount);
+        nextStepUpDate = getNextStepUpDate(nextStepUpDate);
+      }
+
       // Find NAV for current withdrawal date
       const navIndex = sortedNavData.findIndex(item => 
         dayjs(item.date, 'DD-MM-YYYY').isSameOrAfter(currentDate)
@@ -128,7 +146,7 @@ export async function POST(req, { params }) {
       if (navIndex === -1) break;
 
       const currentNav = parseFloat(sortedNavData[navIndex].nav);
-      const unitsToWithdraw = monthlyWithdrawalAmount / currentNav;
+      const unitsToWithdraw = currentWithdrawalAmount / currentNav;
       
       if (unitsToWithdraw > currentUnits) {
         // Last withdrawal - withdraw remaining units
@@ -141,22 +159,24 @@ export async function POST(req, { params }) {
           nav: currentNav,
           unitsWithdrawn: currentUnits,
           amountWithdrawn: actualWithdrawal,
-          remainingUnits: 0
+          remainingUnits: 0,
+          withdrawalAmount: currentWithdrawalAmount
         });
         
         currentUnits = 0;
         break;
       } else {
         currentUnits -= unitsToWithdraw;
-        totalWithdrawn += monthlyWithdrawalAmount;
+        totalWithdrawn += currentWithdrawalAmount;
         withdrawals++;
         
         withdrawalSchedule.push({
           date: currentDate.format('YYYY-MM-DD'),
           nav: currentNav,
           unitsWithdrawn: unitsToWithdraw,
-          amountWithdrawn: monthlyWithdrawalAmount,
-          remainingUnits: currentUnits
+          amountWithdrawn: currentWithdrawalAmount,
+          remainingUnits: currentUnits,
+          withdrawalAmount: currentWithdrawalAmount
         });
       }
 
@@ -174,6 +194,12 @@ export async function POST(req, { params }) {
     const years = end.diff(start, 'year', true);
     const cagr = years > 0 ? (Math.pow(totalValue / amount, 1 / years) - 1) * 100 : 0;
 
+    // Calculate step-up statistics
+    const stepUpCount = Math.floor(dayjs(end).diff(dayjs(start), 'year', true) / 
+      (stepUpFrequency === 'yearly' ? 1 : stepUpFrequency === 'half-yearly' ? 0.5 : 0.25));
+    
+    const finalWithdrawalAmount = parseFloat(amount) + (stepUpCount * parseFloat(stepUpAmount));
+
     return NextResponse.json({
       schemeCode: code,
       initialAmount: parseFloat(amount),
@@ -184,7 +210,11 @@ export async function POST(req, { params }) {
       totalGainPercentage: parseFloat(totalGainPercentage.toFixed(2)),
       cagr: parseFloat(cagr.toFixed(2)),
       withdrawals,
-      monthlyWithdrawalAmount: Math.round(monthlyWithdrawalAmount),
+      initialWithdrawalAmount: parseFloat(amount),
+      finalWithdrawalAmount: finalWithdrawalAmount,
+      stepUpCount,
+      stepUpAmount: parseFloat(stepUpAmount),
+      stepUpFrequency,
       remainingUnits: parseFloat(currentUnits.toFixed(4)),
       initialUnits: parseFloat(initialUnits.toFixed(4)),
       startDate: start.format('YYYY-MM-DD'),
@@ -194,12 +224,13 @@ export async function POST(req, { params }) {
       summary: {
         averageWithdrawalAmount: Math.round(totalWithdrawn / withdrawals),
         totalUnitsWithdrawn: parseFloat((initialUnits - currentUnits).toFixed(4)),
-        averageNAV: parseFloat((totalWithdrawn / (initialUnits - currentUnits)).toFixed(2))
+        averageNAV: parseFloat((totalWithdrawn / (initialUnits - currentUnits)).toFixed(2)),
+        stepUpImpact: parseFloat(((finalWithdrawalAmount - parseFloat(amount)) / parseFloat(amount) * 100).toFixed(2))
       }
     });
     
   } catch (err) {
-    console.error('SWP calculation error:', err);
+    console.error('Step-up SWP calculation error:', err);
     return NextResponse.json(
       { error: 'Internal server error', details: err.message },
       { status: 500 }

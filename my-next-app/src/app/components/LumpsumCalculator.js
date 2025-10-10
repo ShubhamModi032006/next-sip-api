@@ -1,275 +1,113 @@
-'use client';
 import { useState } from 'react';
-import {
-  Grid,
-  TextField,
-  Button,
-  Card,
-  CardContent,
-  Typography,
-  Box,
-  CircularProgress,
-  Alert,
-  Divider
-} from '@mui/material';
+import { TextField, Button, Grid, Typography, Box } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import axios from 'axios';
 import dayjs from 'dayjs';
+import axios from 'axios';
 
 export default function LumpsumCalculator({ schemeCode }) {
-  const [formData, setFormData] = useState({
-    amount: 100000,
-    from: dayjs().subtract(3, 'year'),
-    to: dayjs()
-  });
+  const [amount, setAmount] = useState(100000);
+  const [startDate, setStartDate] = useState(dayjs().subtract(1, 'year'));
   const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  const [loading, setLoading] = useState(false);
 
   const calculateLumpsum = async () => {
+    setError(null);
+    setLoading(true);
+    
     try {
-      setLoading(true);
-      setError(null);
+      const response = await axios.post(`/api/scheme/${schemeCode}/lumpsum`, {
+        amount,
+        startDate: startDate.format('YYYY-MM-DD')
+      });
       
-      const payload = {
-        amount: parseFloat(formData.amount),
-        from: formData.from.format('YYYY-MM-DD'),
-        to: formData.to.format('YYYY-MM-DD')
-      };
-
-      const response = await axios.post(`/api/scheme/${schemeCode}/lumpsum`, payload);
       setResult(response.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to calculate lumpsum returns');
-      console.error('Lumpsum calculation error:', err);
+      console.error('Lumpsum calculation failed:', err);
+      setError(err.response?.data?.error || 'Lumpsum calculation failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
-  const formatPercentage = (value) => {
-    return `${value?.toFixed(2)}%`;
-  };
-
   return (
-    <Box>
+    <Box sx={{ p: 3, border: '1px solid #eee', borderRadius: 2 }}>
       <Typography variant="h6" gutterBottom>
         Lumpsum Calculator
       </Typography>
       
-      <Grid container spacing={3}>
-        {/* Input Form */}
-        <Grid item xs={12} md={6}>
-          <Card variant="outlined">
-            <CardContent>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Investment Amount (₹)"
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e) => handleInputChange('amount', e.target.value)}
-                    inputProps={{ min: 1000, step: 1000 }}
-                  />
-                </Grid>
-                
-                <Grid item xs={12} sm={6}>
-                  <DatePicker
-                    label="Investment Date"
-                    value={formData.from}
-                    onChange={(date) => handleInputChange('from', date)}
-                    maxDate={dayjs().subtract(1, 'month')}
-                    slotProps={{ textField: { fullWidth: true } }}
-                  />
-                </Grid>
-                
-                <Grid item xs={12} sm={6}>
-                  <DatePicker
-                    label="Redemption Date"
-                    value={formData.to}
-                    onChange={(date) => handleInputChange('to', date)}
-                    minDate={formData.from?.add(1, 'month')}
-                    maxDate={dayjs()}
-                    slotProps={{ textField: { fullWidth: true } }}
-                  />
-                </Grid>
-                
-                <Grid item xs={12}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={calculateLumpsum}
-                    disabled={loading}
-                    size="large"
-                  >
-                    {loading ? <CircularProgress size={24} /> : 'Calculate Lumpsum Returns'}
-                  </Button>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={6}>
+          <TextField
+            label="Investment Amount (₹)"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            fullWidth
+          />
         </Grid>
-
-        {/* Results */}
-        <Grid item xs={12} md={6}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-          
-          {result && (
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom color="primary">
-                  Lumpsum Investment Summary
-                </Typography>
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Invested Amount
-                    </Typography>
-                    <Typography variant="h6">
-                      {formatCurrency(result.investedAmount)}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Current Value
-                    </Typography>
-                    <Typography variant="h6" color="primary">
-                      {formatCurrency(result.currentValue)}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Units Purchased
-                    </Typography>
-                    <Typography variant="body1">
-                      {result.units?.toFixed(3)}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Absolute Return
-                    </Typography>
-                    <Typography 
-                      variant="body1" 
-                      color={result.absoluteReturn >= 0 ? 'success.main' : 'error.main'}
-                    >
-                      {formatPercentage(result.absoluteReturn)}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Purchase NAV
-                    </Typography>
-                    <Typography variant="body1">
-                      ₹{result.startNAV?.toFixed(4)}
-                    </Typography>
-                  </Grid>
-                  
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Current NAV
-                    </Typography>
-                    <Typography variant="body1">
-                      ₹{result.endNAV?.toFixed(4)}
-                    </Typography>
-                  </Grid>
-                  
-                  {result.annualizedReturn && (
-                    <Grid item xs={12}>
-                      <Divider sx={{ my: 1 }} />
-                      <Typography variant="body2" color="text.secondary">
-                        Annualized Return
-                      </Typography>
-                      <Typography 
-                        variant="h6" 
-                        color={result.annualizedReturn >= 0 ? 'success.main' : 'error.main'}
-                      >
-                        {formatPercentage(result.annualizedReturn)}
-                      </Typography>
-                    </Grid>
-                  )}
-                </Grid>
-              </CardContent>
-            </Card>
-          )}
+        
+        <Grid item xs={12} sm={6}>
+          <DatePicker
+            label="Investment Date"
+            value={startDate}
+            onChange={setStartDate}
+            maxDate={dayjs()}
+            renderInput={(params) => <TextField {...params} fullWidth />}
+          />
         </Grid>
-
-        {/* Growth Chart */}
-        {result && result.growthHistory && result.growthHistory.length > 0 && (
-          <Grid item xs={12}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Investment Value Over Time
-                </Typography>
-                <Box sx={{ height: 300 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={result.growthHistory}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(date) => dayjs(date).format('MMM YY')}
-                      />
-                      <YAxis 
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
-                      />
-                      <Tooltip 
-                        labelFormatter={(date) => dayjs(date).format('DD MMM YYYY')}
-                        formatter={(value, name) => [
-                          formatCurrency(value),
-                          name === 'value' ? 'Portfolio Value' : 'NAV'
-                        ]}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="value" 
-                        stroke="#1976d2" 
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Box>
-                
-                <Box sx={{ mt: 2, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Total Gain: {formatCurrency(result.currentValue - result.investedAmount)} 
-                    ({formatPercentage(result.absoluteReturn)})
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
+        
+        <Grid item xs={12}>
+          <Button 
+            variant="contained" 
+            onClick={calculateLumpsum}
+            disabled={loading}
+            fullWidth
+          >
+            {loading ? 'Calculating...' : 'Calculate Lumpsum'}
+          </Button>
+        </Grid>
       </Grid>
+
+      {error && (
+        <Typography color="error" sx={{ mt: 2 }}>
+          Error: {error}
+        </Typography>
+      )}
+
+      {result && !error && (
+        <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+          <Typography variant="h6" gutterBottom>Lumpsum Investment Result</Typography>
+          
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>Investment Details</Typography>
+              <Typography>Initial Investment: ₹{result.initialInvestment.toLocaleString()}</Typography>
+              <Typography>Current Value: ₹{result.currentValue.toLocaleString()}</Typography>
+              <Typography color="primary" sx={{ fontWeight: 'bold' }}>
+                Total Growth: ₹{result.growth.toLocaleString()}
+              </Typography>
+              <Typography>Growth Percentage: {result.growthPercentage.toFixed(2)}%</Typography>
+              <Typography>CAGR: {result.cagr.toFixed(2)}%</Typography>
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>NAV Information</Typography>
+              <Typography>Investment NAV: ₹{result.investmentNav.toFixed(4)}</Typography>
+              <Typography>Current NAV: ₹{result.currentNav.toFixed(4)}</Typography>
+              <Typography>Units Purchased: {result.unitsPurchased.toFixed(4)}</Typography>
+              <Typography>Absolute Return: {result.absoluteReturn.toFixed(2)}%</Typography>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>Investment Period</Typography>
+              <Typography>Investment Date: {result.investmentDate}</Typography>
+              <Typography>Current Date: {result.currentDate}</Typography>
+              <Typography>Investment Duration: {result.investmentPeriod.years.toFixed(2)} years ({result.investmentPeriod.days} days)</Typography>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
     </Box>
   );
 }
