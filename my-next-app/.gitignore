@@ -43,6 +43,7 @@ next-env.d.ts
 
 # Temporarily disabled features
 /src/app/api/scheme/[code]/nav-analysis/route.js
+/src/app/components/MutualFundDashboard.js
 
 
 # Keep only these active features:
