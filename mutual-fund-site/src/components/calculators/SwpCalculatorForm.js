@@ -1,5 +1,9 @@
-import { Stack, Typography, TextField, InputAdornment } from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+'use client';
+
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AnimatedWrapper } from '@/components/ui/animated-wrapper';
+import { Calculator, Calendar, DollarSign, CalendarDays, TrendingDown } from 'lucide-react';
 
 /**
  * A controlled form component for the SWP Calculator.
@@ -11,46 +15,69 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
  */
 export default function SwpCalculatorForm({ state, onStateChange }) {
   return (
-    // Stack is a Material-UI component that arranges items vertically or horizontally with consistent spacing.
-    <Stack spacing={2.5}>
-      <Typography variant="h6" component="h3" gutterBottom>
-        SWP Calculator
-      </Typography>
+    <AnimatedWrapper animation="fadeInUp">
+      <Card className="hover-lift">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Calculator className="h-5 w-5" />
+            <span>SWP Calculator</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center space-x-2">
+              <DollarSign className="h-4 w-4" />
+              <span>Initial Investment</span>
+            </label>
+            <Input
+              type="number"
+              placeholder="Enter initial investment amount"
+              value={state.initialInvestment}
+              onChange={e => onStateChange('swp', 'initialInvestment', Number(e.target.value))}
+              className="text-lg"
+            />
+          </div>
 
-      <TextField
-        label="Initial Investment"
-        type="number"
-        value={state.initialInvestment}
-        // When the user types, call the onStateChange function passed from the parent page.
-        // We pass the calculator type ('swp'), the field name ('initialInvestment'), and the new value.
-        onChange={e => onStateChange('swp', 'initialInvestment', Number(e.target.value))}
-        // InputAdornment adds the Rupee symbol (₹) inside the text field for better UX.
-        InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-        fullWidth
-      />
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center space-x-2">
+              <TrendingDown className="h-4 w-4" />
+              <span>Monthly Withdrawal</span>
+            </label>
+            <Input
+              type="number"
+              placeholder="Enter monthly withdrawal amount"
+              value={state.withdrawalAmount}
+              onChange={e => onStateChange('swp', 'withdrawalAmount', Number(e.target.value))}
+              className="text-lg"
+            />
+          </div>
 
-      <TextField
-        label="Monthly Withdrawal"
-        type="number"
-        value={state.withdrawalAmount}
-        onChange={e => onStateChange('swp', 'withdrawalAmount', Number(e.target.value))}
-        InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-        fullWidth
-      />
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center space-x-2">
+              <Calendar className="h-4 w-4" />
+              <span>Withdrawal Start Date</span>
+            </label>
+            <Input
+              type="date"
+              value={state.fromDate ? state.fromDate.format('YYYY-MM-DD') : ''}
+              onChange={e => onStateChange('swp', 'fromDate', e.target.value)}
+            />
+          </div>
 
-      <DatePicker
-        label="Withdrawal Start Date"
-        value={state.fromDate}
-        // The DatePicker component from MUI X returns a 'dayjs' object, which is handled by the parent state.
-        onChange={val => onStateChange('swp', 'fromDate', val)}
-      />
-
-      <DatePicker
-        label="Withdrawal End Date"
-        value={state.toDate}
-        onChange={val => onStateChange('swp', 'toDate', val)}
-      />
-    </Stack>
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center space-x-2">
+              <CalendarDays className="h-4 w-4" />
+              <span>Withdrawal End Date</span>
+            </label>
+            <Input
+              type="date"
+              value={state.toDate ? state.toDate.format('YYYY-MM-DD') : ''}
+              onChange={e => onStateChange('swp', 'toDate', e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </AnimatedWrapper>
   );
 }
 

@@ -1,119 +1,42 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Typography,
-  Grid,
-  Card,
-  CardContent,
-  Button,
-  Box,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  IconButton,
-  Chip,
-  Alert,
-  CircularProgress,
-  Autocomplete
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon
-} from '@mui/icons-material';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { LocalizationProvider } from '@mui/x-date-pickers';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DatePicker } from '@mui/x-date-pickers';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { AnimatedWrapper, HoverCard, StaggerContainer, StaggerItem } from '@/components/ui/animated-wrapper';
+import { Plus, Trash2, Edit, TrendingUp, TrendingDown, PieChart, BarChart3, Calendar, DollarSign } from 'lucide-react';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import axios from 'axios';
 import dayjs from 'dayjs';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7c7c'];
 
-// ** KEY CHANGE **
-// In a real app, this would come from your authentication system (like a user context).
-// For now, we use the username of the dummy user we created in the seed script.
 const DUMMY_USERNAME = 'testuser123';
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState([]);
   const [funds, setFunds] = useState([]);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [editingHolding, setEditingHolding] = useState(null);
-  const [formData, setFormData] = useState({
-    schemeCode: '',
-    schemeName: '',
-    units: '',
-    avgPrice: '',
-    investmentDate: dayjs()
-  });
-  const [portfolioSummary, setPortfolioSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [newEntry, setNewEntry] = useState({
+    fundCode: '',
+    amount: '',
+    date: dayjs().format('YYYY-MM-DD')
+  });
 
-  useEffect(() => {
-    fetchFunds();
-    loadPortfolio();
-  }, []);
-
-  const calculatePortfolioSummary = useCallback(async () => {
-    setLoading(true);
+  const fetchPortfolio = useCallback(async () => {
     try {
-      const summaryPromises = portfolio.map(async (holding) => {
-        try {
-          const response = await axios.get(`/api/scheme/${holding.schemeCode}`);
-          const latestNav = response.data.summary?.latestNav;
-
-          if (!latestNav || !latestNav.nav) {
-            throw new Error(`Latest NAV not available for ${holding.schemeCode}`);
-          }
-
-          const currentValue = holding.units * parseFloat(latestNav.nav);
-          const investedValue = holding.units * holding.avgPrice;
-          const gainLoss = currentValue - investedValue;
-          const gainLossPercentage = investedValue !== 0 ? (gainLoss / investedValue) * 100 : 0;
-
-          return { ...holding, currentNav: parseFloat(latestNav.nav), currentValue, investedValue, gainLoss, gainLossPercentage };
-        } catch (error) {
-          console.error(`Error fetching NAV for ${holding.schemeCode}:`, error);
-          const investedValue = holding.units * holding.avgPrice;
-          return { ...holding, error: true, investedValue, currentValue: investedValue, gainLoss: 0, gainLossPercentage: 0 };
-        }
-      });
-
-      const updatedHoldings = await Promise.all(summaryPromises);
-      const totalInvested = updatedHoldings.reduce((sum, h) => sum + (h.investedValue || 0), 0);
-      const totalCurrent = updatedHoldings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
-      const totalGainLoss = totalCurrent - totalInvested;
-      const totalGainLossPercentage = totalInvested !== 0 ? (totalGainLoss / totalInvested) * 100 : 0;
-
-      setPortfolioSummary({ holdings: updatedHoldings, totalInvested, totalCurrent, totalGainLoss, totalGainLossPercentage });
+      const response = await axios.get(`/api/virtual-portfolio?username=${DUMMY_USERNAME}`);
+      setPortfolio(response.data);
     } catch (error) {
-      console.error('Error calculating portfolio summary:', error);
-      setError('Could not update portfolio values.');
-    } finally {
-      setLoading(false);
+      console.error('Error fetching portfolio:', error);
     }
-  }, [portfolio]);
-
-  useEffect(() => {
-    if (portfolio.length > 0) {
-      calculatePortfolioSummary();
-    } else {
-      setPortfolioSummary(null);
-    }
-  }, [portfolio, calculatePortfolioSummary]);
+  }, []);
 
   const fetchFunds = useCallback(async () => {
     try {
@@ -121,150 +44,411 @@ export default function PortfolioPage() {
       setFunds(response.data);
     } catch (error) {
       console.error('Error fetching funds:', error);
-      setError('Could not load the list of mutual funds.');
     }
   }, []);
 
-  const loadPortfolio = useCallback(async () => {
+  useEffect(() => {
+    const loadData = async () => {
     setLoading(true);
-    setError('');
-    try {
-      const response = await axios.get(`/api/virtual-portfolio?username=${DUMMY_USERNAME}`);
-      setPortfolio(response.data);
-    } catch (error) {
-      console.error('Error loading portfolio:', error);
-      setError('Failed to load your portfolio. Please try again later.');
-      setPortfolio([]);
-    } finally {
+      await Promise.all([fetchPortfolio(), fetchFunds()]);
       setLoading(false);
-    }
-  }, []);
+    };
+    loadData();
+  }, [fetchPortfolio, fetchFunds]);
 
-  const handleAddHolding = () => {
-    setEditingHolding(null);
-    setFormData({ schemeCode: '', schemeName: '', units: '', avgPrice: '', investmentDate: dayjs() });
-    setOpenDialog(true);
-  };
-
-  const handleEditHolding = (holding) => {
-    setEditingHolding(holding);
-    setFormData({ ...holding, investmentDate: dayjs(holding.investmentDate) });
-    setOpenDialog(true);
-  };
-
-  const handleSaveHolding = async () => {
-    const holdingData = { ...formData, investmentDate: formData.investmentDate.toISOString() };
-
+  const handleAddEntry = async () => {
     try {
-      if (editingHolding) {
-        await axios.put(`/api/virtual-portfolio?id=${editingHolding._id}`, holdingData);
-      } else {
-        // ** KEY CHANGE **
-        // We now send the username when creating a new holding.
-        await axios.post('/api/virtual-portfolio', { ...holdingData, username: DUMMY_USERNAME });
-      }
-      setOpenDialog(false);
-      loadPortfolio();
+      await axios.post('/api/virtual-portfolio', {
+        username: DUMMY_USERNAME,
+        ...newEntry,
+        amount: parseFloat(newEntry.amount)
+      });
+      await fetchPortfolio();
+      setNewEntry({ fundCode: '', amount: '', date: dayjs().format('YYYY-MM-DD') });
+      setIsAddDialogOpen(false);
     } catch (error) {
-      console.error('Error saving holding:', error);
-      setError('Could not save the holding.');
+      console.error('Error adding entry:', error);
     }
   };
 
-  const handleDeleteHolding = async (id) => {
-    if (window.confirm('Are you sure you want to delete this holding?')) {
+  const handleEditEntry = async () => {
+    try {
+      await axios.put(`/api/virtual-portfolio/${editingEntry._id}`, {
+        ...editingEntry,
+        amount: parseFloat(editingEntry.amount)
+      });
+      await fetchPortfolio();
+      setEditingEntry(null);
+      setIsEditDialogOpen(false);
+    } catch (error) {
+      console.error('Error updating entry:', error);
+    }
+  };
+
+  const handleDeleteEntry = async (id) => {
       try {
-        await axios.delete(`/api/virtual-portfolio?id=${id}`);
-        loadPortfolio();
+      await axios.delete(`/api/virtual-portfolio/${id}`);
+      await fetchPortfolio();
       } catch (error) {
-        console.error('Error deleting holding:', error);
-        setError('Could not delete the holding.');
-      }
+      console.error('Error deleting entry:', error);
     }
   };
 
-  const handleFundSelect = (event, value) => {
-    setFormData(prev => ({ ...prev, schemeCode: value?.schemeCode || '', schemeName: value?.schemeName || '' }));
+  const getFundName = (fundCode) => {
+    const fund = funds.find(f => f.code === fundCode);
+    return fund ? fund.name : fundCode;
   };
 
-  const formatCurrency = (amount) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
-  const getPieChartData = () => portfolioSummary ? portfolioSummary.holdings.map(h => ({ name: h.schemeName, value: h.currentValue })) : [];
-  const getPerformanceData = () => portfolioSummary ? portfolioSummary.holdings.map(h => ({ name: h.schemeName.substring(0, 15) + '...', invested: h.investedValue, current: h.currentValue })) : [];
+  const calculateTotalValue = () => {
+    return portfolio.reduce((total, entry) => total + (entry.currentValue || entry.amount), 0);
+  };
 
-  if (loading && !portfolio.length) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+  const calculateTotalGainLoss = () => {
+    return portfolio.reduce((total, entry) => {
+      const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
+      return total + gainLoss;
+    }, 0);
+  };
+
+  const getPieChartData = () => {
+    return portfolio.map((entry, index) => ({
+      name: getFundName(entry.fundCode),
+      value: entry.currentValue || entry.amount,
+      color: COLORS[index % COLORS.length]
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
   }
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-        <Typography variant="h4" component="h1" gutterBottom>My Virtual Portfolio</Typography>
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+    <div className="space-y-8">
+      <AnimatedWrapper animation="fadeInUp">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-4">Virtual Portfolio</h1>
+          <p className="text-xl text-gray-600">Track your mutual fund investments</p>
+        </div>
+      </AnimatedWrapper>
 
-        {portfolioSummary && (
-          <Grid container spacing={2} sx={{ mb: 4 }}>
-            <Grid item xs={6} md={3}><Card><CardContent><Typography color="textSecondary" variant="body2">Total Invested</Typography><Typography variant="h6">{formatCurrency(portfolioSummary.totalInvested)}</Typography></CardContent></Card></Grid>
-            <Grid item xs={6} md={3}><Card><CardContent><Typography color="textSecondary" variant="body2">Current Value</Typography><Typography variant="h6" color="primary">{formatCurrency(portfolioSummary.totalCurrent)}</Typography></CardContent></Card></Grid>
-            <Grid item xs={6} md={3}><Card><CardContent><Typography color="textSecondary" variant="body2">Total Gain/Loss</Typography><Typography variant="h6" color={portfolioSummary.totalGainLoss >= 0 ? 'success.main' : 'error.main'}>{formatCurrency(portfolioSummary.totalGainLoss)}</Typography></CardContent></Card></Grid>
-            <Grid item xs={6} md={3}><Card><CardContent><Typography color="textSecondary" variant="body2">Return %</Typography><Typography variant="h6" color={portfolioSummary.totalGainLossPercentage >= 0 ? 'success.main' : 'error.main'}>{portfolioSummary.totalGainLossPercentage.toFixed(2)}%</Typography></CardContent></Card></Grid>
-          </Grid>
-        )}
+      {/* Summary Cards */}
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StaggerItem>
+          <HoverCard>
+            <Card className="hover-lift">
+              <CardContent className="p-6 text-center">
+                <div className="flex items-center justify-center mb-4">
+                  <DollarSign className="h-8 w-8 text-green-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-green-600">
+                  ₹{calculateTotalValue().toLocaleString()}
+                </h3>
+                <p className="text-sm text-muted-foreground">Total Value</p>
+              </CardContent>
+            </Card>
+          </HoverCard>
+        </StaggerItem>
 
-        {portfolio.length > 0 && portfolioSummary && (
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} md={6}><Card><CardContent><Typography variant="h6">Allocation</Typography><Box sx={{ height: 300 }}><ResponsiveContainer><PieChart><Pie data={getPieChartData()} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}>{getPieChartData().map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip formatter={formatCurrency} /><Legend /></PieChart></ResponsiveContainer></Box></CardContent></Card></Grid>
-            <Grid item xs={12} md={6}><Card><CardContent><Typography variant="h6">Performance</Typography><Box sx={{ height: 300 }}><ResponsiveContainer><BarChart data={getPerformanceData()}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tickFormatter={(v) => `₹${(v / 100000).toFixed(1)}L`} /><Tooltip formatter={formatCurrency} /><Legend /><Bar dataKey="invested" fill="#ff7300" name="Invested" /><Bar dataKey="current" fill="#1976d2" name="Current" /></BarChart></ResponsiveContainer></Box></CardContent></Card></Grid>
-          </Grid>
-        )}
+        <StaggerItem>
+          <HoverCard>
+            <Card className="hover-lift">
+              <CardContent className="p-6 text-center">
+                <div className="flex items-center justify-center mb-4">
+                  {calculateTotalGainLoss() >= 0 ? (
+                    <TrendingUp className="h-8 w-8 text-green-600" />
+                  ) : (
+                    <TrendingDown className="h-8 w-8 text-red-600" />
+                  )}
+                </div>
+                <h3 className={`text-2xl font-bold ${calculateTotalGainLoss() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ₹{calculateTotalGainLoss().toLocaleString()}
+                </h3>
+                <p className="text-sm text-muted-foreground">Gain/Loss</p>
+              </CardContent>
+            </Card>
+          </HoverCard>
+        </StaggerItem>
 
-        <Card><CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Holdings ({portfolio.length})</Typography>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddHolding}>Add Holding</Button>
-          </Box>
+        <StaggerItem>
+          <HoverCard>
+            <Card className="hover-lift">
+              <CardContent className="p-6 text-center">
+                <div className="flex items-center justify-center mb-4">
+                  <PieChart className="h-8 w-8 text-blue-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-blue-600">
+                  {portfolio.length}
+                </h3>
+                <p className="text-sm text-muted-foreground">Funds</p>
+              </CardContent>
+            </Card>
+          </HoverCard>
+        </StaggerItem>
+      </StaggerContainer>
 
-          {portfolio.length === 0 && !loading ? (<Alert severity="info">Your portfolio is empty.</Alert>) :
-            (<TableContainer component={Paper} variant="outlined"><Table><TableHead><TableRow>
-              <TableCell>Fund Name</TableCell><TableCell align="right">Units</TableCell><TableCell align="right">Avg. Price</TableCell><TableCell align="right">Invested</TableCell><TableCell align="right">Current NAV</TableCell><TableCell align="right">Current Value</TableCell><TableCell align="right">Gain/Loss</TableCell><TableCell align="right">Return %</TableCell><TableCell align="center">Actions</TableCell>
-            </TableRow></TableHead><TableBody>
-                {portfolioSummary?.holdings.map((holding) => (
-                  <TableRow key={holding._id}>
-                    <TableCell><Typography variant="body2">{holding.schemeName}</Typography><Typography variant="caption" color="text.secondary">{holding.schemeCode}</Typography></TableCell>
-                    <TableCell align="right">{holding.units.toFixed(3)}</TableCell>
-                    <TableCell align="right">{formatCurrency(holding.avgPrice)}</TableCell>
-                    <TableCell align="right">{formatCurrency(holding.investedValue)}</TableCell>
-                    <TableCell align="right">{holding.error ? <Chip label="Error" color="error" size="small" /> : formatCurrency(holding.currentNav)}</TableCell>
-                    <TableCell align="right">{formatCurrency(holding.currentValue)}</TableCell>
-                    <TableCell align="right" sx={{ color: holding.gainLoss >= 0 ? 'success.main' : 'error.main' }}>{formatCurrency(holding.gainLoss)}</TableCell>
-                    <TableCell align="right" sx={{ color: holding.gainLossPercentage >= 0 ? 'success.main' : 'error.main' }}>{holding.gainLossPercentage.toFixed(2)}%</TableCell>
-                    <TableCell align="center">
-                      <IconButton size="small" onClick={() => handleEditHolding(holding)}><EditIcon /></IconButton>
-                      <IconButton size="small" onClick={() => handleDeleteHolding(holding._id)}><DeleteIcon /></IconButton>
-                    </TableCell>
+      {/* Charts */}
+      {portfolio.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <AnimatedWrapper animation="fadeInUp" delay={0.2}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <PieChart className="h-5 w-5" />
+                  <span>Portfolio Distribution</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsPieChart>
+                    <Pie
+                      data={getPieChartData()}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {getPieChartData().map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </AnimatedWrapper>
+
+          <AnimatedWrapper animation="fadeInUp" delay={0.3}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <BarChart3 className="h-5 w-5" />
+                  <span>Performance Overview</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {portfolio.map((entry, index) => {
+                    const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
+                    const percentage = ((gainLoss / entry.amount) * 100).toFixed(2);
+                    
+                    return (
+                      <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div>
+                          <h4 className="font-semibold">{getFundName(entry.fundCode)}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Invested: ₹{entry.amount.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-semibold ${gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {gainLoss >= 0 ? '+' : ''}₹{gainLoss.toLocaleString()}
+                          </p>
+                          <p className={`text-sm ${gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {percentage}%
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </AnimatedWrapper>
+        </div>
+      )}
+
+      {/* Add Entry Button */}
+      <AnimatedWrapper animation="fadeInUp" delay={0.4}>
+        <div className="flex justify-center">
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                <Plus className="h-5 w-5 mr-2" />
+                Add Investment
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add New Investment</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Fund Code</label>
+                  <Input
+                    value={newEntry.fundCode}
+                    onChange={(e) => setNewEntry({ ...newEntry, fundCode: e.target.value })}
+                    placeholder="Enter fund code"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Amount</label>
+                  <Input
+                    type="number"
+                    value={newEntry.amount}
+                    onChange={(e) => setNewEntry({ ...newEntry, amount: e.target.value })}
+                    placeholder="Enter amount"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Date</label>
+                  <Input
+                    type="date"
+                    value={newEntry.date}
+                    onChange={(e) => setNewEntry({ ...newEntry, date: e.target.value })}
+                  />
+                </div>
+                <Button onClick={handleAddEntry} className="w-full">
+                  Add Investment
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </AnimatedWrapper>
+
+      {/* Portfolio Table */}
+      {portfolio.length > 0 ? (
+        <AnimatedWrapper animation="fadeInUp" delay={0.5}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Investments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fund</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Current Value</TableHead>
+                    <TableHead>Gain/Loss</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody></Table></TableContainer>)}
-        </CardContent></Card>
+                </TableHeader>
+                <TableBody>
+                  {portfolio.map((entry, index) => {
+                    const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
+                    const percentage = ((gainLoss / entry.amount) * 100).toFixed(2);
+                    
+                    return (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          {getFundName(entry.fundCode)}
+                        </TableCell>
+                        <TableCell>₹{entry.amount.toLocaleString()}</TableCell>
+                        <TableCell>₹{(entry.currentValue || entry.amount).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <span className={gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              {gainLoss >= 0 ? '+' : ''}₹{gainLoss.toLocaleString()}
+                            </span>
+                            <Badge variant={gainLoss >= 0 ? 'default' : 'destructive'}>
+                              {percentage}%
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>{dayjs(entry.date).format('MMM DD, YYYY')}</TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingEntry(entry);
+                                setIsEditDialogOpen(true);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteEntry(entry._id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </AnimatedWrapper>
+      ) : (
+        <AnimatedWrapper animation="fadeInUp">
+          <Card>
+            <CardContent className="text-center py-12">
+              <PieChart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No investments yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Start building your portfolio by adding your first investment
+              </p>
+            </CardContent>
+          </Card>
+        </AnimatedWrapper>
+      )}
 
-        <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>{editingHolding ? `Edit: ${editingHolding.schemeName}` : 'Add New Holding'}</DialogTitle>
-          <DialogContent>
-            <Grid container spacing={2} sx={{ pt: 1 }}>
-              {!editingHolding && (
-                <Grid item xs={12}><Autocomplete options={funds} getOptionLabel={(o) => `${o.schemeName} (${o.schemeCode})`} onChange={handleFundSelect} renderInput={(p) => <TextField {...p} label="Select Fund" />} /></Grid>)}
-              <Grid item xs={12} sm={6}><TextField fullWidth label="Units" type="number" value={formData.units} onChange={(e) => setFormData(p => ({ ...p, units: e.target.value }))} /></Grid>
-              <Grid item xs={12} sm={6}><TextField fullWidth label="Average Price (₹)" type="number" value={formData.avgPrice} onChange={(e) => setFormData(p => ({ ...p, avgPrice: e.target.value }))} /></Grid>
-              <Grid item xs={12}><DatePicker label="Investment Date" value={formData.investmentDate} onChange={(d) => setFormData(p => ({ ...p, investmentDate: d }))} maxDate={dayjs()} sx={{ width: '100%' }} /></Grid>
-            </Grid>
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Investment</DialogTitle>
+          </DialogHeader>
+          {editingEntry && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Fund Code</label>
+                <Input
+                  value={editingEntry.fundCode}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, fundCode: e.target.value })}
+                  placeholder="Enter fund code"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Amount</label>
+                <Input
+                  type="number"
+                  value={editingEntry.amount}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, amount: e.target.value })}
+                  placeholder="Enter amount"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Current Value</label>
+                <Input
+                  type="number"
+                  value={editingEntry.currentValue || editingEntry.amount}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, currentValue: e.target.value })}
+                  placeholder="Enter current value"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Date</label>
+                <Input
+                  type="date"
+                  value={editingEntry.date}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
+                />
+              </div>
+              <Button onClick={handleEditEntry} className="w-full">
+                Update Investment
+              </Button>
+            </div>
+          )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-            <Button onClick={handleSaveHolding} variant="contained" disabled={!formData.units || !formData.avgPrice || (!editingHolding && !formData.schemeCode)}>
-              {editingHolding ? 'Update' : 'Add'}
-            </Button>
-          </DialogActions>
         </Dialog>
-      </Box>
-    </LocalizationProvider>
+    </div>
   );
 }

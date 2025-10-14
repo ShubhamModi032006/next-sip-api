@@ -1,36 +1,52 @@
 'use client';
 
 import { useWatchlist } from '@/context/WatchlistContext';
-import { IconButton, Tooltip } from '@mui/material'; // We can still use MUI for simple things like icons
-import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded';
-import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Star, StarOff } from 'lucide-react';
+import { AnimatedWrapper } from '@/components/ui/animated-wrapper';
 
-export default function WatchlistButton({ schemeCode }) {
+export default function WatchlistButton({ fundCode }) {
   const { isWatched, addToWatchlist, removeFromWatchlist } = useWatchlist();
-  const isBookmarked = isWatched(schemeCode);
+  const isBookmarked = isWatched(fundCode);
 
   const handleClick = (e) => {
     e.stopPropagation(); // Prevents clicks from bubbling up to parent elements
     e.preventDefault();
     if (isBookmarked) {
-      removeFromWatchlist(schemeCode);
+      removeFromWatchlist(fundCode);
     } else {
-      addToWatchlist(schemeCode);
+      addToWatchlist(fundCode);
     }
   };
 
   return (
-    <Tooltip title={isBookmarked ? "Remove from Watchlist" : "Add to Watchlist"}>
-      <button
-        onClick={handleClick}
-        className="p-2 rounded-full hover:bg-yellow-100 transition-colors"
-      >
-        {isBookmarked ? (
-          <StarRoundedIcon className="text-yellow-500" />
-        ) : (
-          <StarBorderRoundedIcon className="text-gray-400 hover:text-yellow-500" />
-        )}
-      </button>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <AnimatedWrapper animation="scaleIn">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClick}
+              className={`p-2 rounded-full transition-all duration-200 hover-scale ${
+                isBookmarked 
+                  ? 'text-yellow-500 hover:bg-yellow-50' 
+                  : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
+              }`}
+            >
+              {isBookmarked ? (
+                <Star className="h-5 w-5 fill-current" />
+              ) : (
+                <StarOff className="h-5 w-5" />
+              )}
+            </Button>
+          </AnimatedWrapper>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{isBookmarked ? "Remove from Watchlist" : "Add to Watchlist"}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
