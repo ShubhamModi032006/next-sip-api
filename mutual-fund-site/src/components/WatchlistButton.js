@@ -6,17 +6,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Star, StarOff } from 'lucide-react';
 import { AnimatedWrapper } from '@/components/ui/animated-wrapper';
 
-export default function WatchlistButton({ fundCode }) {
+export default function WatchlistButton({ scheme }) {
   const { isWatched, addToWatchlist, removeFromWatchlist } = useWatchlist();
-  const isBookmarked = isWatched(fundCode);
+  const isBookmarked = isWatched(scheme.schemeCode);
 
   const handleClick = (e) => {
     e.stopPropagation(); // Prevents clicks from bubbling up to parent elements
     e.preventDefault();
     if (isBookmarked) {
-      removeFromWatchlist(fundCode);
+      removeFromWatchlist(scheme.schemeCode);
     } else {
-      addToWatchlist(fundCode);
+      addToWatchlist(scheme);
     }
   };
 

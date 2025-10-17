@@ -10,12 +10,15 @@ import { AnimatedWrapper, HoverCard, StaggerContainer, StaggerItem } from '@/com
 import WatchlistButton from '@/components/WatchlistButton';
 import { Search, Star, TrendingUp, TrendingDown, ExternalLink, Filter } from 'lucide-react';
 
+import FundsList from '@/components/FundsList';
+
 export default function FundsPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [detailsByCode, setDetailsByCode] = useState({});
+  return (
+    <div className="container mx-auto py-6">
+      <h1 className="text-3xl font-bold mb-6">Mutual Funds</h1>
+      <FundsList />
+    </div>
+  );
 
   // Debounce search input to avoid excessive API calls
   useEffect(() => {

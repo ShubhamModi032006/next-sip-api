@@ -43,7 +43,8 @@ function parseDDMMYYYY(dateStr) {
  */
 async function fetchFundDetails(fund) {
     const schemeCode = fund.schemeCode;
-    if (!schemeCode) return null;
+    // Ensure schemeCode is a valid number
+    if (!schemeCode || isNaN(Number(schemeCode))) return null;
 
     const url = `${API_BASE_URL}/${schemeCode}`;
 
@@ -80,7 +81,7 @@ async function fetchFundDetails(fund) {
         } catch (e) {
             console.warn(`\n⚠️ Error fetching fund ${schemeCode} (Attempt ${attempt + 1}/${RETRY_COUNT}): ${e.message}`);
         }
-        
+
         if (attempt < RETRY_COUNT - 1) {
             await new Promise(res => setTimeout(res, RETRY_DELAY_SECONDS * 1000 * (attempt + 1)));
         }
@@ -89,6 +90,21 @@ async function fetchFundDetails(fund) {
     return null;
 }
 
+
+/**
+ * Connect to MongoDB
+ */
+async function connectDB() {
+    try {
+        await mongoose.connect(MONGO_URI, {
+            dbName: 'test'
+        });
+        console.log('📦 Connected to MongoDB');
+    } catch (error) {
+        console.error('❌ MongoDB connection error:', error);
+        throw error;
+    }
+}
 
 /**
  * Main function to run the entire process.
@@ -100,7 +116,16 @@ async function main() {
         return;
     }
 
+    try {
+        // Connect to MongoDB
+        await connectDB();
+    } catch (error) {
+        console.error("❌ Failed to connect to MongoDB. Exiting.");
+        return;
+    }
+
     let allFunds;
+
     try {
         console.log("📡 Fetching the master list of all funds...");
         const response = await fetch(API_BASE_URL);
@@ -121,10 +146,16 @@ async function main() {
         const batch = allFunds.slice(i, i + CONCURRENCY_LIMIT);
         const promises = batch.map(fund => fetchFundDetails(fund));
         const results = await Promise.all(promises);
-        
+
         results.forEach(result => {
             progressCounter++;
-            if (result) {
+            // Enhanced validation to ensure we only include valid funds
+            if (result && 
+                result.code && 
+                !isNaN(Number(result.code)) && 
+                result.name && 
+                result.nav && 
+                result.date) {
                 activeFunds.push(result);
             }
         });
@@ -132,34 +163,36 @@ async function main() {
     }
 
     console.log("\n\n✅ Processing complete.");
-    console.log("="*30);
+    console.log("=" * 30);
     console.log(`📊 FINAL RESULTS:`);
     console.log(`   - ✅ Active Funds:    ${activeFunds.length}`);
     console.log(`   - ❌ Inactive/Failed: ${totalFunds - activeFunds.length}`);
-    console.log("="*30);
+    console.log("=" * 30);
 
     if (activeFunds.length > 0) {
-        let connection;
         try {
-            console.log("\n💾 Connecting to MongoDB...");
-            connection = await mongoose.connect(MONGO_URI);
-            
-            console.log("🗑️  Deleting all old documents from 'activefunds'...");
+            console.log("\n💾 Connected to MongoDB...");
+
+            console.log("🗑️  Deleting all old documents from 'active_funds' collection...");
             const { deletedCount } = await Fund.deleteMany({});
             console.log(`   -> ${deletedCount} documents deleted.`);
-            
+
             console.log(`✍️  Inserting ${activeFunds.length} new active funds into MongoDB...`);
-            await Fund.insertMany(activeFunds);
-            console.log("   -> Successfully inserted documents.");
-            
+            await Fund.insertMany(activeFunds, { 
+                ordered: false,  // Continue processing even if some documents fail
+                collection: 'active_funds'
+            }).catch(err => {
+                console.warn("Warning: Some documents failed to insert:", err.message);
+                // Continue execution even if there are some failures
+            });
+            console.log("   -> Successfully inserted valid documents.");
+
             console.log("\n🎉 MongoDB update complete.");
         } catch (e) {
             console.error(`\n❌ CRITICAL ERROR: Could not update MongoDB. Error: ${e}`);
         } finally {
-            if (connection) {
-                await connection.disconnect();
-                console.log("🔒 MongoDB connection closed.");
-            }
+            await mongoose.connection.close();
+            console.log("🔒 MongoDB connection closed.");
         }
     }
 

@@ -50,35 +50,59 @@ export default function ComparePage() {
 
     const fetchCompareData = async () => {
       try {
-        const promises = compareList.map(code => 
-          fetch(`/api/scheme/${code}/returns`).then(res => res.json())
+        const promises = compareList.map(fund => 
+          fetch(`/api/compare`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ schemeCodes: [fund.schemeCode] }),
+          }).then(res => res.json())
         );
         
         const results = await Promise.all(promises);
         
-        const processedData = results.map((data, index) => ({
-          code: compareList[index],
-          name: data.scheme?.name || `Fund ${compareList[index]}`,
-          returns: data.returns || {},
-          nav: data.scheme?.nav || 0
-        }));
+        // Process results safely, keeping them aligned with the original compareList
+        const processedData = results
+          .map((result, index) => {
+            // result is the array response for a single fund, e.g., [fundData] or []
+            const data = result && result[0]; // Get the first item from the response array
+            const originalFund = compareList[index];
+
+            // If the API call failed or returned no data for this fund, skip it.
+            if (!data) {
+              return null;
+            }
+
+            // Safely create the fund object using optional chaining and fallbacks
+            return {
+              code: originalFund.schemeCode,
+              name: data?.meta?.scheme_name || originalFund.schemeName,
+              returns: data?.returns || {},
+              nav: parseFloat(data?.summary?.latestNav?.nav || 0),
+            };
+          })
+          .filter(Boolean); // Remove any null entries that resulted from failed API calls
 
         setCompareData(processedData);
 
-        // Process chart data
-        const chartDataMap = new Map();
-        
-        processedData.forEach((fund, fundIndex) => {
-          Object.entries(fund.returns).forEach(([period, returnValue]) => {
-            if (!chartDataMap.has(period)) {
-              chartDataMap.set(period, { period });
-            }
-            chartDataMap.get(period)[`fund${fundIndex + 1}`] = returnValue;
-            chartDataMap.get(period)[`fund${fundIndex + 1}Name`] = fund.name;
-          });
-        });
+        // This check prevents an error if all API calls fail and processedData is empty
+        if (processedData.length > 0) {
+            // Process chart data
+            const chartDataMap = new Map();
+            
+            processedData.forEach((fund, fundIndex) => {
+              Object.entries(fund.returns).forEach(([period, returnValue]) => {
+                if (!chartDataMap.has(period)) {
+                  chartDataMap.set(period, { period });
+                }
+                chartDataMap.get(period)[`fund${fundIndex + 1}`] = returnValue;
+                chartDataMap.get(period)[`fund${fundIndex + 1}Name`] = fund.name;
+              });
+            });
+            setChartData(Array.from(chartDataMap.values()));
+        } else {
+            setChartData([]);
+        }
 
-        setChartData(Array.from(chartDataMap.values()));
       } catch (err) {
         setError('Failed to fetch comparison data');
         console.error('Error fetching compare data:', err);
@@ -91,7 +115,7 @@ export default function ComparePage() {
   }, [compareList]);
 
   const handleAddToCompare = (fund) => {
-    addToCompare(fund.code);
+    addToCompare({ schemeCode: fund.code, schemeName: fund.name });
     setSearchValue('');
     setSearchOptions([]);
   };
@@ -170,17 +194,17 @@ export default function ComparePage() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {compareList.map((code, index) => (
+                {compareList.map((fund, index) => (
                   <Badge
-                    key={code}
+                    key={fund.schemeCode}
                     variant="secondary"
                     className="px-3 py-1 text-sm flex items-center space-x-2"
                   >
-                    <span>Fund {index + 1}</span>
+                    <span>{fund.schemeName}</span>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveFromCompare(code)}
+                      onClick={() => handleRemoveFromCompare(fund.schemeCode)}
                       className="h-4 w-4 p-0 hover:bg-destructive hover:text-destructive-foreground"
                     >
                       <X className="h-3 w-3" />
@@ -236,16 +260,18 @@ export default function ComparePage() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    {compareData.map((_, index) => (
+                    {/* **FIX START** - Changed from (_, index) to (fund, index) */}
+                    {compareData.map((fund, index) => (
                       <Line
                         key={index}
                         type="monotone"
                         dataKey={`fund${index + 1}`}
                         stroke={COLORS[index % COLORS.length]}
                         strokeWidth={2}
-                        name={`Fund ${index + 1}`}
+                        name={fund.name} 
                       />
                     ))}
+                    {/* **FIX END** */}
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -265,7 +291,7 @@ export default function ComparePage() {
                       <TableHead>Period</TableHead>
                       {compareData.map((fund, index) => (
                         <TableHead key={index} className="text-center">
-                          Fund {index + 1}
+                          {fund.name}
                         </TableHead>
                       ))}
                     </TableRow>

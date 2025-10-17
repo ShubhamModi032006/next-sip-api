@@ -51,7 +51,7 @@ export default function StepUpSwpCalculatorForm({ state, onStateChange }) {
             </label>
             <Input
               type="date"
-              value={state.fromDate ? state.fromDate.format('YYYY-MM-DD') : ''}
+              value={state.fromDate ? (typeof state.fromDate === 'string' ? state.fromDate : state.fromDate.format('YYYY-MM-DD')) : ''}
               onChange={e => onStateChange('stepUpSwp', 'fromDate', e.target.value)}
             />
           </div>
@@ -63,7 +63,7 @@ export default function StepUpSwpCalculatorForm({ state, onStateChange }) {
             </label>
             <Input
               type="date"
-              value={state.toDate ? state.toDate.format('YYYY-MM-DD') : ''}
+              value={state.toDate ? (typeof state.toDate === 'string' ? state.toDate : state.toDate.format('YYYY-MM-DD')) : ''}
               onChange={e => onStateChange('stepUpSwp', 'toDate', e.target.value)}
             />
           </div>

@@ -96,7 +96,11 @@ export default function SchemeDetailPage() {
   const selectedReturnData = returnsData.find(r => r.period === chartPeriod);
   const isPositiveReturn = selectedReturnData && parseFloat(selectedReturnData.simpleReturn) >= 0;
 
-  const handleInputChange = (calcType, field, value) => { setCalcState(prev => ({ ...prev, [calcType]: { ...prev[calcType], [field]: value } })); };
+  const handleInputChange = (calcType, field, value) => {
+    const isDateField = field.toLowerCase().includes('date');
+    const updatedValue = isDateField ? dayjs(value) : value;
+    setCalcState(prev => ({ ...prev, [calcType]: { ...prev[calcType], [field]: updatedValue } }));
+  };
 
   const handleCalculate = async () => {
     setCalcLoading(true);

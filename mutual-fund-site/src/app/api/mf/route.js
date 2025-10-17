@@ -1,46 +1,95 @@
-// File: src/app/api/mf/route.js
 import { NextResponse } from 'next/server';
+import dbConnect from '../../../utils/dbConnect';
+import Fund from '../../../models/Fund';
 
-// Let's create a simple in-memory cache to avoid hitting the external API on every request.
-let cachedSchemes = null;
+// Cache configuration
+let cachedData = null;
 let lastFetchTime = 0;
-const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
-async function getSchemes() {
+async function getAllFundsData() {
   const now = Date.now();
-  if (cachedSchemes && (now - lastFetchTime < CACHE_DURATION)) {
-    console.log("Returning schemes from cache.");
-    return cachedSchemes;
+  if (cachedData && (now - lastFetchTime < CACHE_DURATION)) {
+    console.log("Returning data from cache.");
+    return cachedData;
   }
 
-  console.log("Fetching schemes from external API.");
+  console.log("Fetching fresh data...");
+  
+  let activeFunds = [];
+  
+  try {
+    // Connect to database
+    await dbConnect();
+    
+    // Get active funds from MongoDB
+    activeFunds = await Fund.find({})
+      .select('code name nav date last_updated_on')
+      .lean();
+  } catch (error) {
+    console.error('Error fetching from MongoDB:', error);
+    throw new Error('Failed to fetch active funds from database');
+  }
+  
+  // Get all funds from API
   const response = await fetch('https://api.mfapi.in/mf');
   if (!response.ok) {
-    throw new Error('Failed to fetch schemes');
+    throw new Error('Failed to fetch all funds from API');
   }
-  const data = await response.json();
+  const allFundsFromApi = await response.json();
+
+  // Create a Set of active fund codes for quick lookup
+  const activeFundCodes = new Set(activeFunds.map(fund => fund.code));
+
+  // Filter out inactive funds
+  const inactiveFunds = allFundsFromApi
+    .filter(fund => {
+      const code = parseInt(fund.schemeCode);
+      return !activeFundCodes.has(code) && fund.schemeName;
+    })
+    .map(fund => ({
+      code: parseInt(fund.schemeCode),
+      name: fund.schemeName,
+      status: 'inactive'
+    }));
+
+  cachedData = {
+    active: activeFunds,
+    inactive: inactiveFunds
+  };
   
-  // Filter out schemes that don't have a name, as they are not useful
-  cachedSchemes = data.filter(scheme => scheme.schemeName); 
   lastFetchTime = now;
-  
-  return cachedSchemes;
+  return cachedData;
 }
 
 export async function GET(request) {
   try {
-    const allSchemes = await getSchemes();
-    
-    // Get page and limit from query parameters, with default values
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '12', 10);
     const searchQuery = searchParams.get('q')?.toLowerCase() || '';
+    const status = searchParams.get('status') || 'all'; // 'all', 'active', or 'inactive'
 
-    // Filter schemes based on search query
+    const allData = await getAllFundsData();
+    
+    // Determine which funds to show based on status
+    let fundsToProcess = [];
+    if (status === 'active') {
+      fundsToProcess = allData.active;
+    } else if (status === 'inactive') {
+      fundsToProcess = allData.inactive;
+    } else {
+      // For 'all', combine both but mark active status
+      fundsToProcess = [
+        ...allData.active.map(fund => ({ ...fund, status: 'active' })),
+        ...allData.inactive
+      ];
+    }
+
+    // Filter based on search query
     const filteredSchemes = searchQuery
-      ? allSchemes.filter(scheme => scheme.schemeName.toLowerCase().includes(searchQuery))
-      : allSchemes;
+      ? fundsToProcess.filter(scheme => scheme.name.toLowerCase().includes(searchQuery))
+      : fundsToProcess;
 
     // Calculate pagination
     const startIndex = (page - 1) * limit;
@@ -53,6 +102,10 @@ export async function GET(request) {
       totalPages: Math.ceil(filteredSchemes.length / limit),
       currentPage: page,
       schemes: paginatedSchemes,
+      summary: {
+        totalActive: allData.active.length,
+        totalInactive: allData.inactive.length
+      }
     });
   } catch (error) {
     console.error(error);

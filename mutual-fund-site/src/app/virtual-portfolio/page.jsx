@@ -25,6 +25,8 @@ export default function PortfolioPage() {
   const [editingEntry, setEditingEntry] = useState(null);
   const [newEntry, setNewEntry] = useState({
     fundCode: '',
+    schemeName: '',
+    nav: '',
     amount: '',
     date: dayjs().format('YYYY-MM-DD')
   });
@@ -40,10 +42,11 @@ export default function PortfolioPage() {
 
   const fetchFunds = useCallback(async () => {
     try {
-      const response = await axios.get('/api/mf');
-      setFunds(response.data);
+      const response = await axios.get('/api/mf?status=active');
+      setFunds(response.data.schemes || []);
     } catch (error) {
       console.error('Error fetching funds:', error);
+      setFunds([]);
     }
   }, []);
 
@@ -58,13 +61,43 @@ export default function PortfolioPage() {
 
   const handleAddEntry = async () => {
     try {
+      // Single validation check for all required fields
+      if (!newEntry.fundCode || !newEntry.amount || !newEntry.date || !newEntry.schemeName || !newEntry.nav) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      const nav = parseFloat(newEntry.nav);
+      if (isNaN(nav) || nav <= 0) {
+        alert('Please enter a valid NAV value');
+        return;
+      }
+
+      const amount = parseFloat(newEntry.amount);
+      if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+
+      const units = amount / nav;
+
       await axios.post('/api/virtual-portfolio', {
         username: DUMMY_USERNAME,
-        ...newEntry,
-        amount: parseFloat(newEntry.amount)
+        schemeCode: newEntry.fundCode,
+        schemeName: newEntry.schemeName,
+        units: units,
+        avgPrice: nav,
+        investmentDate: new Date(newEntry.date).toISOString()
       });
       await fetchPortfolio();
-      setNewEntry({ fundCode: '', amount: '', date: dayjs().format('YYYY-MM-DD') });
+      // Reset form with all fields
+      setNewEntry({
+        fundCode: '',
+        schemeName: '',
+        nav: '',
+        amount: '',
+        date: dayjs().format('YYYY-MM-DD')
+      });
       setIsAddDialogOpen(false);
     } catch (error) {
       console.error('Error adding entry:', error);
@@ -95,25 +128,42 @@ export default function PortfolioPage() {
   };
 
   const getFundName = (fundCode) => {
-    const fund = funds.find(f => f.code === fundCode);
-    return fund ? fund.name : fundCode;
+    if (!fundCode) return 'Unknown Fund';
+    const fund = funds.find(f => f.code?.toString() === fundCode?.toString());
+    return fund ? fund.name : `Fund ${fundCode}`;
+  };
+
+  const getFundNAV = (fundCode) => {
+    if (!fundCode) return 0;
+    const fund = funds.find(f => f.code?.toString() === fundCode?.toString());
+    return fund ? parseFloat(fund.nav) || 0 : 0;
+  };
+
+  const calculateEntryValue = (entry) => {
+    if (!entry) return 0;
+    const currentNav = getFundNAV(entry.schemeCode);
+    return entry.units * (currentNav || entry.avgPrice);
   };
 
   const calculateTotalValue = () => {
-    return portfolio.reduce((total, entry) => total + (entry.currentValue || entry.amount), 0);
+    return portfolio.reduce((total, entry) => {
+      const currentValue = calculateEntryValue(entry);
+      return total + currentValue;
+    }, 0);
   };
 
   const calculateTotalGainLoss = () => {
     return portfolio.reduce((total, entry) => {
-      const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
-      return total + gainLoss;
+      const currentValue = calculateEntryValue(entry);
+      const investedValue = entry.units * entry.avgPrice;
+      return total + (currentValue - investedValue);
     }, 0);
   };
 
   const getPieChartData = () => {
     return portfolio.map((entry, index) => ({
-      name: getFundName(entry.fundCode),
-      value: entry.currentValue || entry.amount,
+      name: entry.schemeName || getFundName(entry.schemeCode),
+      value: calculateEntryValue(entry),
       color: COLORS[index % COLORS.length]
     }));
   };
@@ -282,11 +332,38 @@ export default function PortfolioPage() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Fund Code</label>
-                  <Input
+                  <label className="text-sm font-medium">Select Fund</label>
+                  <select
+                    className="w-full p-2 border rounded-md"
                     value={newEntry.fundCode}
-                    onChange={(e) => setNewEntry({ ...newEntry, fundCode: e.target.value })}
-                    placeholder="Enter fund code"
+                    onChange={(e) => {
+                      const selectedFund = funds.schemes?.find(f => f.code.toString() === e.target.value);
+                      if (selectedFund) {
+                        setNewEntry({
+                          ...newEntry,
+                          fundCode: selectedFund.code.toString(),
+                          schemeName: selectedFund.name,
+                          nav: selectedFund.nav || ''
+                        });
+                      }
+                    }}
+                  >
+                    <option value="">Select a fund</option>
+                    {funds.map(fund => (
+                      <option key={fund.code} value={fund.code}>
+                        {fund.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">NAV</label>
+                  <Input
+                    type="number"
+                    value={newEntry.nav}
+                    readOnly
+                    className="bg-gray-50"
+                    placeholder="NAV will be set automatically"
                   />
                 </div>
                 <div>
@@ -336,27 +413,36 @@ export default function PortfolioPage() {
                 </TableHeader>
                 <TableBody>
                   {portfolio.map((entry, index) => {
-                    const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
-                    const percentage = ((gainLoss / entry.amount) * 100).toFixed(2);
+                    const currentValue = calculateEntryValue(entry);
+                    const investedValue = entry.units * entry.avgPrice;
+                    const gainLoss = currentValue - investedValue;
+                    const percentage = ((gainLoss / investedValue) * 100).toFixed(2);
                     
                     return (
                       <TableRow key={index}>
                         <TableCell className="font-medium">
-                          {getFundName(entry.fundCode)}
+                          {entry.schemeName || getFundName(entry.schemeCode)}
                         </TableCell>
-                        <TableCell>₹{entry.amount.toLocaleString()}</TableCell>
-                        <TableCell>₹{(entry.currentValue || entry.amount).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div>₹{investedValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                            <div className="text-sm text-gray-500">
+                              {entry.units.toFixed(3)} units @ ₹{entry.avgPrice.toFixed(2)}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>₹{currentValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
                             <span className={gainLoss >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              {gainLoss >= 0 ? '+' : ''}₹{gainLoss.toLocaleString()}
+                              {gainLoss >= 0 ? '+' : ''}₹{gainLoss.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                             </span>
                             <Badge variant={gainLoss >= 0 ? 'default' : 'destructive'}>
                               {percentage}%
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell>{dayjs(entry.date).format('MMM DD, YYYY')}</TableCell>
+                        <TableCell>{dayjs(entry.investmentDate).format('MMM DD, YYYY')}</TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
                             <Button

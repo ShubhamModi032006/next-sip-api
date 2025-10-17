@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node updateFunds.js",
+    "scheduler": "node scheduler.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +15,7 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "mongoose": "^8.19.1",
+    "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0"
   }
 }

@@ -59,7 +59,7 @@ export default function SwpCalculatorForm({ state, onStateChange }) {
             </label>
             <Input
               type="date"
-              value={state.fromDate ? state.fromDate.format('YYYY-MM-DD') : ''}
+              value={state.fromDate ? (typeof state.fromDate === 'string' ? state.fromDate : state.fromDate.format('YYYY-MM-DD')) : ''}
               onChange={e => onStateChange('swp', 'fromDate', e.target.value)}
             />
           </div>
@@ -71,7 +71,7 @@ export default function SwpCalculatorForm({ state, onStateChange }) {
             </label>
             <Input
               type="date"
-              value={state.toDate ? state.toDate.format('YYYY-MM-DD') : ''}
+              value={state.toDate ? (typeof state.toDate === 'string' ? state.toDate : state.toDate.format('YYYY-MM-DD')) : ''}
               onChange={e => onStateChange('swp', 'toDate', e.target.value)}
             />
           </div>
