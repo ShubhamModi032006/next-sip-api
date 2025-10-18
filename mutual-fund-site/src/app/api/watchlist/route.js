@@ -20,23 +20,27 @@ export async function GET() {
         // For each fund in the watchlist, fetch its data and calculate returns
         const promises = userWatchlist.funds.map(async (code) => {
             const { meta, navHistory } = await getCleanSchemeData(code);
-            const periods = ['1d', '1m', '3m', '6m', '1y']; // Define periods
+            const periods = ['1D', '1M', '6M', '1Y']; // UI expects caps keys
             
             // Calculate returns for all defined periods
             const returns = periods.map(p => {
                 try {
-                    // We'll add a '1d' case to our helper
-                    return calculateReturnForPeriod(navHistory, p);
+                    const ret = calculateReturnForPeriod(navHistory, p.toLowerCase());
+                    return { period: p, simpleReturn: ret.simpleReturn };
                 } catch {
                     return { period: p, simpleReturn: null };
                 }
             });
 
             return {
-                schemeCode: meta.scheme_code,
-                schemeName: meta.scheme_name,
-                latestNav: navHistory[navHistory.length - 1],
-                returns,
+                code: meta.scheme_code,
+                name: meta.scheme_name,
+                nav: parseFloat(navHistory[navHistory.length - 1]?.nav || 0),
+                // shape for UI: returns as object with caps keys
+                returns: returns.reduce((acc, r) => {
+                    acc[r.period] = r.simpleReturn ?? undefined;
+                    return acc;
+                }, {}),
             };
         });
 
@@ -71,5 +75,25 @@ export async function POST(request) {
 
     } catch (error) {
         return NextResponse.json({ error: 'Failed to add to watchlist' }, { status: 500 });
+    }
+}
+
+// --- DELETE Request: Remove a fund from the watchlist ---
+export async function DELETE(request) {
+    const userId = getUserId();
+    await dbConnect();
+    try {
+        const { schemeCode } = await request.json();
+        if (!schemeCode) {
+            return NextResponse.json({ error: 'Scheme code is required' }, { status: 400 });
+        }
+        const userWatchlist = await Watchlist.findOneAndUpdate(
+            { userId },
+            { $pull: { funds: schemeCode } },
+            { new: true }
+        );
+        return NextResponse.json(userWatchlist ? userWatchlist.funds : []);
+    } catch (error) {
+        return NextResponse.json({ error: 'Failed to remove from watchlist' }, { status: 500 });
     }
 }

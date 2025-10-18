@@ -36,11 +36,9 @@ export async function POST(request) {
             // D. Bundle everything into a single, comprehensive object for this fund.
             return {
                 code,
-                details: {
-                    meta,       // For the main info table (Fund House, Category, etc.)
-                    returns,    // For the side-by-side returns comparison table
-                    navHistory, // For the overlaid performance graph
-                }
+                meta,       // For the main info table (Fund House, Category, etc.)
+                returns,    // For the side-by-side returns comparison table
+                navHistory, // For the overlaid performance graph
             };
         });
         
@@ -52,7 +50,11 @@ export async function POST(request) {
         //    making it easy to look up the data for a specific fund.
         const responseData = {};
         results.forEach(result => {
-            responseData[result.code] = result.details;
+            responseData[result.code] = {
+                meta: result.meta,
+                returns: result.returns,
+                navHistory: result.navHistory,
+            };
         });
 
         // 6. Send the complete dataset back to the frontend.

@@ -19,19 +19,21 @@ function WatchlistPage() {
         fetch('/api/watchlist')
             .then(res => res.ok ? res.json() : Promise.reject('Failed to load watchlist'))
             .then(data => {
-                setWatchlist(data);
+                setWatchlist(Array.isArray(data) ? data : []);
                 setLoading(false);
             })
             .catch(err => {
-                setError(err.message);
+                setError(typeof err === 'string' ? err : err?.message || 'Failed to load watchlist');
                 setLoading(false);
             });
     }, []);
 
     const handleRemoveFromWatchlist = async (fundCode) => {
         try {
-            await fetch(`/api/watchlist/${fundCode}`, {
+            await fetch(`/api/watchlist`, {
                 method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ schemeCode: fundCode })
             });
             setWatchlist(watchlist.filter(item => item.code !== fundCode));
         } catch (err) {
@@ -188,7 +190,7 @@ function WatchlistPage() {
                                                     <Badge variant="outline">{fund.code}</Badge>
                                                 </TableCell>
                                                 <TableCell className="font-mono">
-                                                    ₹{fund.nav?.toFixed(2) || 'N/A'}
+                                                    ₹{(typeof fund.nav === 'number' ? fund.nav.toFixed(2) : 'N/A')}
                                                 </TableCell>
                                                 {['1D', '1M', '6M', '1Y'].map(period => (
                                                     <TableCell key={period}>
@@ -196,7 +198,7 @@ function WatchlistPage() {
                                                             <div className="flex items-center space-x-1">
                                                                 {getReturnIcon(fund.returns[period])}
                                                                 <span className={getReturnColor(fund.returns[period])}>
-                                                                    {fund.returns[period].toFixed(2)}%
+                                                                    {Number(fund.returns[period]).toFixed(2)}%
                                                                 </span>
                                                             </div>
                                                         ) : (

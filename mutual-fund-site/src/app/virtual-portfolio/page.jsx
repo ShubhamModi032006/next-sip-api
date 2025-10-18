@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedWrapper, HoverCard, StaggerContainer, StaggerItem } from '@/components/ui/animated-wrapper';
-import { Plus, Trash2, Edit, TrendingUp, TrendingDown, PieChart, BarChart3, Calendar, DollarSign } from 'lucide-react';
+import { Plus, Trash2, Edit, TrendingUp, TrendingDown, PieChart, BarChart3, Calendar, DollarSign, Search } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -30,6 +30,11 @@ export default function PortfolioPage() {
     amount: '',
     date: dayjs().format('YYYY-MM-DD')
   });
+  const [showFundSearch, setShowFundSearch] = useState(false);
+  const [fundSearchQuery, setFundSearchQuery] = useState('');
+  const [fundSearchResults, setFundSearchResults] = useState([]);
+  const [fundSearchPage, setFundSearchPage] = useState(1);
+  const [fundSearchLoading, setFundSearchLoading] = useState(false);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -50,6 +55,24 @@ export default function PortfolioPage() {
     }
   }, []);
 
+  const searchFunds = useCallback(async (query, page = 1) => {
+    setFundSearchLoading(true);
+    try {
+      const url = query.trim() 
+        ? `/api/mf?q=${encodeURIComponent(query)}&page=${page}&limit=10`
+        : `/api/mf?status=active&page=${page}&limit=10`;
+      
+      const response = await axios.get(url);
+      setFundSearchResults(response.data.schemes || []);
+      setFundSearchPage(page);
+    } catch (error) {
+      console.error('Error searching funds:', error);
+      setFundSearchResults([]);
+    } finally {
+      setFundSearchLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const loadData = async () => {
     setLoading(true);
@@ -58,6 +81,20 @@ export default function PortfolioPage() {
     };
     loadData();
   }, [fetchPortfolio, fetchFunds]);
+
+  // Click outside handler for search dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showFundSearch && !event.target.closest('.fund-search-container')) {
+        setShowFundSearch(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFundSearch]);
 
   const handleAddEntry = async () => {
     try {
@@ -98,18 +135,32 @@ export default function PortfolioPage() {
         amount: '',
         date: dayjs().format('YYYY-MM-DD')
       });
+      setShowFundSearch(false);
+      setFundSearchQuery('');
+      setFundSearchResults([]);
       setIsAddDialogOpen(false);
     } catch (error) {
       console.error('Error adding entry:', error);
     }
   };
 
+  const handleFundSelect = (fund) => {
+    setNewEntry({
+      ...newEntry,
+      fundCode: fund.code.toString(),
+      schemeName: fund.name,
+      nav: fund.nav || ''
+    });
+    setShowFundSearch(false);
+    setFundSearchQuery('');
+    setFundSearchResults([]);
+  };
+
   const handleEditEntry = async () => {
     try {
-      await axios.put(`/api/virtual-portfolio/${editingEntry._id}`, {
+      await axios.put(`/api/virtual-portfolio`, {
         ...editingEntry,
-        amount: parseFloat(editingEntry.amount)
-      });
+      }, { params: { id: editingEntry._id } });
       await fetchPortfolio();
       setEditingEntry(null);
       setIsEditDialogOpen(false);
@@ -120,22 +171,22 @@ export default function PortfolioPage() {
 
   const handleDeleteEntry = async (id) => {
       try {
-      await axios.delete(`/api/virtual-portfolio/${id}`);
+      await axios.delete(`/api/virtual-portfolio`, { params: { id } });
       await fetchPortfolio();
       } catch (error) {
       console.error('Error deleting entry:', error);
     }
   };
 
-  const getFundName = (fundCode) => {
-    if (!fundCode) return 'Unknown Fund';
-    const fund = funds.find(f => f.code?.toString() === fundCode?.toString());
-    return fund ? fund.name : `Fund ${fundCode}`;
+  const getFundName = (schemeCode) => {
+    if (!schemeCode) return 'Unknown Fund';
+    const fund = funds.find(f => f.code?.toString() === schemeCode?.toString());
+    return fund ? fund.name : `Fund ${schemeCode}`;
   };
 
-  const getFundNAV = (fundCode) => {
-    if (!fundCode) return 0;
-    const fund = funds.find(f => f.code?.toString() === fundCode?.toString());
+  const getFundNAV = (schemeCode) => {
+    if (!schemeCode) return 0;
+    const fund = funds.find(f => f.code?.toString() === schemeCode?.toString());
     return fund ? parseFloat(fund.nav) || 0 : 0;
   };
 
@@ -287,15 +338,17 @@ export default function PortfolioPage() {
               <CardContent>
                 <div className="space-y-4">
                   {portfolio.map((entry, index) => {
-                    const gainLoss = (entry.currentValue || entry.amount) - entry.amount;
-                    const percentage = ((gainLoss / entry.amount) * 100).toFixed(2);
+                    const investedValue = entry.units * entry.avgPrice;
+                    const currentValue = calculateEntryValue(entry);
+                    const gainLoss = currentValue - investedValue;
+                    const percentage = investedValue > 0 ? ((gainLoss / investedValue) * 100).toFixed(2) : '0.00';
                     
                     return (
                       <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                         <div>
-                          <h4 className="font-semibold">{getFundName(entry.fundCode)}</h4>
+                          <h4 className="font-semibold">{getFundName(entry.schemeCode)}</h4>
                           <p className="text-sm text-muted-foreground">
-                            Invested: ₹{entry.amount.toLocaleString()}
+                            Invested: ₹{investedValue.toLocaleString()}
                           </p>
                         </div>
                         <div className="text-right">
@@ -333,28 +386,89 @@ export default function PortfolioPage() {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium">Select Fund</label>
-                  <select
-                    className="w-full p-2 border rounded-md"
-                    value={newEntry.fundCode}
-                    onChange={(e) => {
-                      const selectedFund = funds.schemes?.find(f => f.code.toString() === e.target.value);
-                      if (selectedFund) {
-                        setNewEntry({
-                          ...newEntry,
-                          fundCode: selectedFund.code.toString(),
-                          schemeName: selectedFund.name,
-                          nav: selectedFund.nav || ''
-                        });
-                      }
-                    }}
-                  >
-                    <option value="">Select a fund</option>
-                    {funds.map(fund => (
-                      <option key={fund.code} value={fund.code}>
-                        {fund.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative fund-search-container">
+                    <div className="relative">
+                      <Input
+                        placeholder="Search for funds..."
+                        value={newEntry.schemeName || fundSearchQuery}
+                        onChange={(e) => {
+                          const query = e.target.value;
+                          setFundSearchQuery(query);
+                          if (query.length >= 2) {
+                            searchFunds(query);
+                            setShowFundSearch(true);
+                          } else if (query.length === 0) {
+                            // Show all funds when search is empty
+                            searchFunds('');
+                            setShowFundSearch(true);
+                          } else {
+                            setShowFundSearch(false);
+                            setFundSearchResults([]);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (fundSearchQuery.length >= 2 || fundSearchQuery.length === 0) {
+                            searchFunds(fundSearchQuery);
+                            setShowFundSearch(true);
+                          }
+                        }}
+                        className="w-full pr-10"
+                      />
+                      <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    </div>
+                    
+                    {showFundSearch && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {fundSearchLoading ? (
+                          <div className="p-3 text-center text-gray-500">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mx-auto"></div>
+                            <span className="ml-2">Searching...</span>
+                          </div>
+                        ) : fundSearchResults.length > 0 ? (
+                          <>
+                            {fundSearchResults.map((fund) => (
+                              <div
+                                key={fund.code}
+                                className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                                onClick={() => handleFundSelect(fund)}
+                              >
+                                <div className="font-medium text-sm">{fund.name}</div>
+                                <div className="text-xs text-gray-500">Code: {fund.code}</div>
+                              </div>
+                            ))}
+                            <div className="p-2 border-t bg-gray-50">
+                              <div className="flex justify-between items-center text-xs text-gray-600">
+                                <span>Page {fundSearchPage}</span>
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() => searchFunds(fundSearchQuery, Math.max(1, fundSearchPage - 1))}
+                                    disabled={fundSearchPage <= 1}
+                                    className="px-2 py-1 bg-gray-200 rounded disabled:opacity-50"
+                                  >
+                                    Previous
+                                  </button>
+                                  <button
+                                    onClick={() => searchFunds(fundSearchQuery, fundSearchPage + 1)}
+                                    className="px-2 py-1 bg-gray-200 rounded"
+                                  >
+                                    Next
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : fundSearchQuery.length >= 2 ? (
+                          <div className="p-3 text-center text-gray-500">
+                            No funds found for "{fundSearchQuery}"
+                          </div>
+                        ) : fundSearchQuery.length === 0 ? (
+                          <div className="p-3 text-center text-gray-500">
+                            Showing all available funds
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium">NAV</label>

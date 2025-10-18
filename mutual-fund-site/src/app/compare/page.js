@@ -15,7 +15,7 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 
 export default function ComparePage() {
   const { compareList, addToCompare, removeFromCompare } = useCompare();
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [compareData, setCompareData] = useState(null);
@@ -50,59 +50,47 @@ export default function ComparePage() {
 
     const fetchCompareData = async () => {
       try {
-        const promises = compareList.map(fund => 
-          fetch(`/api/compare`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ schemeCodes: [fund.schemeCode] }),
-          }).then(res => res.json())
-        );
-        
-        const results = await Promise.all(promises);
-        
-        // Process results safely, keeping them aligned with the original compareList
-        const processedData = results
-          .map((result, index) => {
-            // result is the array response for a single fund, e.g., [fundData] or []
-            const data = result && result[0]; // Get the first item from the response array
-            const originalFund = compareList[index];
+        const schemeCodes = compareList.map(fund => fund.schemeCode);
+        const response = await fetch(`/api/compare`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schemeCodes }),
+        });
 
-            // If the API call failed or returned no data for this fund, skip it.
-            if (!data) {
-              return null;
-            }
-
-            // Safely create the fund object using optional chaining and fallbacks
-            return {
-              code: originalFund.schemeCode,
-              name: data?.meta?.scheme_name || originalFund.schemeName,
-              returns: data?.returns || {},
-              nav: parseFloat(data?.summary?.latestNav?.nav || 0),
-            };
-          })
-          .filter(Boolean); // Remove any null entries that resulted from failed API calls
-
-        setCompareData(processedData);
-
-        // This check prevents an error if all API calls fail and processedData is empty
-        if (processedData.length > 0) {
-            // Process chart data
-            const chartDataMap = new Map();
-            
-            processedData.forEach((fund, fundIndex) => {
-              Object.entries(fund.returns).forEach(([period, returnValue]) => {
-                if (!chartDataMap.has(period)) {
-                  chartDataMap.set(period, { period });
-                }
-                chartDataMap.get(period)[`fund${fundIndex + 1}`] = returnValue;
-                chartDataMap.get(period)[`fund${fundIndex + 1}Name`] = fund.name;
-              });
-            });
-            setChartData(Array.from(chartDataMap.values()));
-        } else {
-            setChartData([]);
+        if (!response.ok) {
+          throw new Error('Failed to fetch data from the server.');
         }
 
+        const results = await response.json();
+
+        const chartDataMap = new Map();
+        const processedData = Object.entries(results).map(([code, data], fundIndex) => {
+          const returnsMap = {};
+
+          // Process returns for both the table (returnsMap) and the chart (chartDataMap)
+          data.returns.forEach(ret => {
+            if (ret.simpleReturn !== null) {
+              returnsMap[ret.period] = ret.simpleReturn;
+
+              if (!chartDataMap.has(ret.period)) {
+                chartDataMap.set(ret.period, { period: ret.period });
+              }
+              chartDataMap.get(ret.period)[`fund${fundIndex + 1}`] = ret.simpleReturn;
+              chartDataMap.get(ret.period)[`fund${fundIndex + 1}Name`] = data.meta.scheme_name;
+            }
+          });
+
+          return {
+            code: code,
+            name: data.meta.scheme_name,
+            returns: returnsMap,
+            nav: parseFloat(data.navHistory[data.navHistory.length - 1]?.nav || 0),
+          };
+        });
+
+        console.log('Processed compare data:', processedData);
+        setCompareData(processedData);
+        setChartData(Array.from(chartDataMap.values()));
       } catch (err) {
         setError('Failed to fetch comparison data');
         console.error('Error fetching compare data:', err);
@@ -141,7 +129,7 @@ export default function ComparePage() {
       <AnimatedWrapper animation="fadeInUp">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-4">Compare Funds</h1>
-          <p className="text-xl text-gray-600">Compare performance of multiple mutual funds</p>
+          <p className="text-xl text-gray-600">Compare performance of multiple mutual funds [max 4 Funds] </p>
         </div>
       </AnimatedWrapper>
 
@@ -165,7 +153,7 @@ export default function ComparePage() {
                 />
                 <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               </div>
-              
+
               {searchOptions.length > 0 && (
                 <div className="border rounded-lg max-h-60 overflow-y-auto">
                   {searchOptions.map((option) => (
@@ -268,7 +256,7 @@ export default function ComparePage() {
                         dataKey={`fund${index + 1}`}
                         stroke={COLORS[index % COLORS.length]}
                         strokeWidth={2}
-                        name={fund.name} 
+                        name={fund.name}
                       />
                     ))}
                     {/* **FIX END** */}
@@ -301,13 +289,15 @@ export default function ComparePage() {
                       <TableRow key={period}>
                         <TableCell className="font-medium">{period}</TableCell>
                         {compareData.map((fund, index) => {
-                          const returnValue = fund.returns[period] || 0;
+                          const rawValue = fund.returns[period];
+                          const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+                          const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
                           return (
                             <TableCell key={index} className="text-center">
                               <div className="flex items-center justify-center space-x-2">
-                                {getReturnIcon(returnValue)}
-                                <span className={getReturnColor(returnValue)}>
-                                  {returnValue.toFixed(2)}%
+                                {getReturnIcon(safeValue)}
+                                <span className={getReturnColor(safeValue)}>
+                                  {safeValue.toFixed(2)}%
                                 </span>
                               </div>
                             </TableCell>
@@ -322,43 +312,41 @@ export default function ComparePage() {
           </AnimatedWrapper>
 
           {/* Fund Details */}
-          <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {compareData.map((fund, index) => (
-              <StaggerItem key={fund.code}>
-                <HoverCard>
-                  <Card className="hover-lift">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Fund {index + 1}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div>
-                          <h4 className="font-semibold text-sm text-muted-foreground">Name</h4>
-                          <p className="text-sm">{fund.name}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-sm text-muted-foreground">Code</h4>
-                          <p className="text-sm font-mono">{fund.code}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-sm text-muted-foreground">NAV</h4>
-                          <p className="text-sm">₹{fund.nav.toFixed(2)}</p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemoveFromCompare(fund.code)}
-                          className="w-full"
-                        >
-                          Remove from Compare
-                        </Button>
+              <div key={fund.code}>
+                <Card className="hover:shadow-lg transition-shadow">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Fund {index + 1}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="font-semibold text-sm text-muted-foreground">Name</h4>
+                        <p className="text-sm">{fund.name}</p>
                       </div>
-                    </CardContent>
-                  </Card>
-                </HoverCard>
-              </StaggerItem>
+                      <div>
+                        <h4 className="font-semibold text-sm text-muted-foreground">Code</h4>
+                        <p className="text-sm font-mono">{fund.code}</p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-sm text-muted-foreground">NAV</h4>
+                        <p className="text-sm">₹{fund.nav.toFixed(2)}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveFromCompare(fund.code)}
+                        className="w-full"
+                      >
+                        Remove from Compare
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             ))}
-          </StaggerContainer>
+          </div>
         </div>
       )}
 
