@@ -3,7 +3,10 @@ import mongoose from 'mongoose';
 // This file sets up and manages the connection to your MongoDB database.
 // It's designed to be efficient by caching the connection.
 
-
+console.log("SERVER ENV VARS:", {
+  MONGODB_URI: process.env.MONGODB_URI,
+  JWT_SECRET: process.env.JWT_SECRET
+});
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
